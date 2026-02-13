@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RS-Agent · 科技感布局预览</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-base: #0f1419;
+      --bg-surface: #1a1f26;
+      --bg-elevated: #232a34;
+      --bg-card: #1e252e;
+      --border: #2d3640;
+      --border-subtle: #252c36;
+      --text-primary: #e6edf3;
+      --text-secondary: #8b949e;
+      --text-muted: #6e7681;
+      --accent: #3fb950;
+      --accent-hover: #56d364;
+      --accent-glow: rgba(63, 185, 80, 0.2);
+      --accent-red: #f85149;
+      --accent-gold: #d29922;
+      --accent-gold-light: rgba(210, 153, 34, 0.2);
+      --user-bar: #3fb950;
+      --assistant-bar: #d29922;
+      --prompt-bar: #f85149;
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --font-sans: "Inter", "PingFang SC", system-ui, sans-serif;
+      --font-mono: "JetBrains Mono", "SF Mono", monospace;
+      --transition: 0.2s ease;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      background: var(--bg-base);
+      color: var(--text-primary);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .app-root {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ----- 顶栏：极简 + 渐变 logo ----- */
+    .app-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      height: 52px;
+      min-height: 52px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-surface);
+      position: relative;
+    }
+    .app-header::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--accent-gold) 0%, var(--accent) 50%, var(--accent-red) 100%);
+      opacity: 0.9;
+    }
+    .header-left {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+    .app-header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      background: linear-gradient(90deg, var(--accent-gold) 0%, var(--accent) 50%, var(--accent-red) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .app-header .tagline {
+      margin: 0;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      letter-spacing: 0.02em;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color var(--transition), border-color var(--transition), background var(--transition);
+    }
+    .btn-icon:hover {
+      color: var(--text-primary);
+      border-color: var(--accent);
+      background: rgba(63, 185, 80, 0.08);
+    }
+    .sidebar-new {
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      border: none;
+      background: linear-gradient(135deg, var(--accent) 0%, #2ea043 100%);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: opacity var(--transition), box-shadow var(--transition);
+    }
+    .sidebar-new:hover { opacity: 0.9; box-shadow: 0 0 0 1px var(--accent-gold-light); }
+    .history-trigger {
+      text-decoration: none;
+      color: inherit;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    /* ----- 主体：左侧窄轨 + 历史抽屉 + 全宽对话区 ----- */
+    .app-main {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .rail {
+      width: 52px;
+      min-width: 52px;
+      flex-shrink: 0;
+      background: var(--bg-surface);
+      border-right: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 16px;
+      gap: 8px;
+    }
+    .rail .btn-icon { width: 40px; height: 40px; }
+
+    /* 历史抽屉：通过 :target 显示 */
+    .history-drawer {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 280px;
+      max-width: 85vw;
+      height: 100vh;
+      background: var(--bg-elevated);
+      border-right: 1px solid var(--border);
+      z-index: 100;
+      transform: translateX(-100%);
+      transition: transform 0.25s ease;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
+    }
+    .history-drawer:target {
+      transform: translateX(0);
+    }
+    .drawer-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .drawer-header span {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .drawer-close {
+      width: 32px;
+      height: 32px;
+      border: none;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 18px;
+      cursor: pointer;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color var(--transition), background var(--transition);
+    }
+    .drawer-close:hover { color: var(--text-primary); background: var(--border-subtle); }
+    .sidebar-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 8px;
+    }
+    .sidebar-item {
+      width: 100%;
+      text-align: left;
+      border: none;
+      cursor: pointer;
+      margin-bottom: 6px;
+      padding: 12px 10px;
+      border-radius: var(--radius-md);
+      background: transparent;
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 13px;
+      transition: background var(--transition);
+      border-left: 3px solid transparent;
+    }
+    .sidebar-item:hover { background: var(--bg-card); }
+    .sidebar-item-active {
+      background: rgba(63, 185, 80, 0.1);
+      border-left-color: var(--accent-red);
+    }
+    .sidebar-item-title {
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .sidebar-item-meta {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+    }
+
+    /* ----- 对话区：全宽深色画布 ----- */
+    .chat-panel {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-base);
+      overflow: hidden;
+    }
+
+    .messages {
+      flex: 1;
+      padding: 24px 32px 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .msg {
+      display: flex;
+      flex-direction: column;
+      max-width: 90%;
+      margin-bottom: 0;
+    }
+    .msg-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .msg-role {
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .msg-time {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+    }
+    .msg-user { align-self: flex-end; }
+    .msg-user .msg-meta { justify-content: flex-end; }
+    .msg-user .msg-content {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--user-bar);
+      padding: 14px 18px;
+      border-radius: var(--radius-md) var(--radius-md) 4px var(--radius-md);
+      color: var(--text-primary);
+    }
+    .msg-assistant { align-self: flex-start; }
+    .msg-assistant .msg-content {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-left: 3px solid var(--assistant-bar);
+      padding: 14px 18px;
+      border-radius: 4px var(--radius-md) var(--radius-md) var(--radius-md);
+      color: var(--text-primary);
+    }
+    .msg-text {
+      margin: 0;
+      font-size: 14px;
+      white-space: pre-wrap;
+      line-height: 1.55;
+    }
+    .msg-markdown {
+      font-size: 14px;
+      line-height: 1.65;
+      color: var(--text-primary);
+    }
+    .msg-markdown p { margin: 0 0 0.5em; }
+    .msg-markdown h2 {
+      margin: 0.75em 0 0.35em;
+      font-size: 1.05em;
+      font-weight: 600;
+      color: var(--accent);
+      border-left: 3px solid var(--accent);
+      padding-left: 0.5em;
+    }
+    .msg-markdown code {
+      background: var(--bg-elevated);
+      color: var(--accent);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.9em;
+      font-family: var(--font-mono);
+      border: 1px solid var(--border);
+    }
+    .msg-prompt {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      background: rgba(248, 81, 73, 0.08);
+      border: 1px solid rgba(248, 81, 73, 0.25);
+      border-left: 3px solid var(--prompt-bar);
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+
+    /* ----- 输入区：命令行风格 ----- */
+    .input-area {
+      padding: 16px 24px 24px;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-subtle);
+    }
+    .input-wrap {
+      display: flex;
+      align-items: flex-end;
+      gap: 0;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 4px 4px 4px 14px;
+      transition: border-color var(--transition), box-shadow var(--transition);
+    }
+    .input-wrap:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+    .input-prompt {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      color: var(--accent);
+      padding-right: 8px;
+      padding-bottom: 12px;
+      user-select: none;
+    }
+    .input-area textarea {
+      flex: 1;
+      min-height: 48px;
+      max-height: 140px;
+      resize: none;
+      padding: 12px 0;
+      border: none;
+      background: transparent;
+      color: var(--text-primary);
+      font-size: 14px;
+      font-family: var(--font-sans);
+      line-height: 1.5;
+    }
+    .input-area textarea::placeholder { color: var(--text-muted); }
+    .input-area textarea:focus { outline: none; }
+    .input-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      padding-left: 0;
+    }
+    .upload-btn, .print-btn {
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      transition: color var(--transition), border-color var(--transition);
+    }
+    .upload-btn:hover, .print-btn:hover {
+      color: var(--text-secondary);
+      border-color: var(--text-muted);
+    }
+    .upload-btn input { display: none; }
+    .input-area .send-btn {
+      padding: 10px 20px;
+      border-radius: var(--radius-sm);
+      border: none;
+      background: linear-gradient(135deg, var(--accent) 0%, #2ea043 100%);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: opacity var(--transition), box-shadow var(--transition);
+    }
+    .input-area .send-btn:hover {
+      opacity: 0.95;
+      box-shadow: 0 0 0 1px var(--accent-gold-light);
+    }
+  </style>
+</head>
+<body>
+  <div class="app-root">
+    <header class="app-header">
+      <div class="header-left">
+        <h1>RS-Agent</h1>
+        <span class="tagline">支持业务查询 & 需求分析</span>
+      </div>
+      <div class="header-actions">
+        <button type="button" class="sidebar-new">新对话</button>
+        <a href="#history" class="btn-icon" title="历史会话" aria-label="打开历史">≡</a>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <!-- 历史抽屉（点击 rail 或 顶栏 ≡ 打开） -->
+      <div id="history" class="history-drawer">
+        <div class="drawer-header">
+          <span>历史会话</span>
+          <a href="#" class="drawer-close" aria-label="关闭">×</a>
+        </div>
+        <div class="sidebar-list">
+          <button type="button" class="sidebar-item sidebar-item-active">
+            <div class="sidebar-item-title">系统改动点</div>
+            <div class="sidebar-item-meta">已完成 · 2025/2/12 14:30</div>
+          </button>
+          <button type="button" class="sidebar-item">
+            <div class="sidebar-item-title">知识库查询</div>
+            <div class="sidebar-item-meta">已完成 · 2025/2/12 12:00</div>
+          </button>
+          <button type="button" class="sidebar-item">
+            <div class="sidebar-item-title">多策略封顶方案</div>
+            <div class="sidebar-item-meta">进行中 · 2025/2/11 18:20</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- 左侧窄轨 -->
+      <aside class="rail">
+        <a href="#history" class="btn-icon" title="历史会话">≡</a>
+      </aside>
+
+      <section class="chat-panel">
+        <div class="messages">
+          <div class="msg msg-user">
+            <div class="msg-meta">
+              <span class="msg-role">你</span>
+              <span class="msg-time">14:30:02</span>
+            </div>
+            <div class="msg-content">
+              <pre class="msg-text">系统改动点</pre>
+            </div>
+          </div>
+          <div class="msg msg-assistant">
+            <div class="msg-meta">
+              <span class="msg-role">助手</span>
+              <span class="msg-time">14:30:15</span>
+            </div>
+            <div class="msg-content">
+              <div class="msg-markdown">
+                <p>已根据你的需求完成分析，草稿如下。</p>
+                <h2>一、业务需求概述</h2>
+                <p>需求描述与目标…</p>
+                <h2>二、系统改动点</h2>
+                <p>涉及模块与接口…</p>
+              </div>
+              <div class="msg-prompt">
+                请确认或修改上述内容，回复后再继续生成最终文档。
+              </div>
+            </div>
+          </div>
+          <div class="msg msg-user">
+            <div class="msg-meta">
+              <span class="msg-role">你</span>
+              <span class="msg-time">14:32:01</span>
+            </div>
+            <div class="msg-content">
+              <pre class="msg-text">查询知识库：最近交易规则有变更吗？</pre>
+            </div>
+          </div>
+          <div class="msg msg-assistant">
+            <div class="msg-meta">
+              <span class="msg-role">助手</span>
+              <span class="msg-time">14:32:08</span>
+            </div>
+            <div class="msg-content">
+              <div class="msg-markdown">
+                <p>根据知识库检索，当前<strong>交易规则</strong>未发现近期变更记录。相关配置见 <code>config/trading_rules.md</code>。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="input-area">
+          <div class="input-wrap">
+            <span class="input-prompt">&gt;</span>
+            <textarea placeholder="输入指令，如【查询知识库】或【系统改动点】 · Enter 发送" rows="1"></textarea>
+          </div>
+          <div class="input-actions">
+            <label class="upload-btn"><span>上传图片</span><input type="file" accept="image/*" multiple /></label>
+            <button type="button" class="print-btn">导出/打印</button>
+            <button type="button" class="send-btn">发送</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    document.querySelector('.input-area textarea').value = '';
+  </script>
+</body>
+</html>
