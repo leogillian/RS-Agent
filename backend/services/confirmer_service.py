@@ -179,7 +179,7 @@ def get_display(draft_output: dict, prompt_to_user: Optional[str] = None) -> Con
     )
 
 
-def parse_feedback(draft_output: dict, user_message: str) -> ConfirmerParseResult:
+async def parse_feedback(draft_output: dict, user_message: str) -> ConfirmerParseResult:
     """阶段二：解析用户对草稿的回复，返回 status 及可选字段。
 
     优先调用 Qwen（llm_confirmer_parse）；若 LLM 不可用或报错，则回退到原有关键词规则。
@@ -188,7 +188,7 @@ def parse_feedback(draft_output: dict, user_message: str) -> ConfirmerParseResul
 
     # 尝试用 LLM 解析
     try:
-        parsed = llm_confirmer_parse(draft_output, user_message or "")
+        parsed = await llm_confirmer_parse(draft_output, user_message or "")
         status = parsed.get("status") or "confirmed"
         suggested = parsed.get("suggested_draft_updates")
         clarification_question = parsed.get("clarification_question")

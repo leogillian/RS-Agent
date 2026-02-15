@@ -51,6 +51,18 @@ def init_db() -> None:
             )
             """
         )
+        # P0-2: Orchestrator session persistence
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                state TEXT NOT NULL,
+                session_data TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
 
 
 def create_conversation(conv_id: str, intent: str, status: str = "active") -> None:
@@ -189,4 +201,41 @@ def trim_old_conversations(max_count: int = 10) -> None:
             "DELETE FROM conversations WHERE id = ?",
             [(cid,) for cid in old_ids],
         )
+
+
+# ---------------------------------------------------------------------------
+# Sessions (P0-2: Orchestrator session persistence)
+# ---------------------------------------------------------------------------
+
+def save_session(session_id: str, state: str, session_data: str) -> None:
+    """Insert or update an orchestrator session (upsert)."""
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO sessions (id, state, session_data, created_at, updated_at)
+            VALUES (?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))
+            ON CONFLICT(id) DO UPDATE SET
+                state = excluded.state,
+                session_data = excluded.session_data,
+                updated_at = datetime('now', 'localtime')
+            """,
+            (session_id, state, session_data),
+        )
+
+
+def load_session(session_id: str) -> Optional[Dict[str, Any]]:
+    """Load an orchestrator session by ID.  Returns dict with id/state/session_data or None."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "SELECT id, state, session_data, created_at, updated_at FROM sessions WHERE id = ?",
+            (session_id,),
+        )
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def delete_session(session_id: str) -> None:
+    """Delete an orchestrator session."""
+    with get_conn() as conn:
+        conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
 

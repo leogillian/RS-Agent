@@ -1,8 +1,11 @@
-"""Service wrapper around trading-knowledge-base run_all_sources.py."""
+"""Service wrapper around trading-knowledge-base run_all_sources.py.
+
+P0-3: uses ``asyncio.create_subprocess_exec`` for non-blocking I/O.
+"""
 
 from __future__ import annotations
 
-import subprocess
+import asyncio
 import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -14,7 +17,7 @@ class KBQueryError(RuntimeError):
     """Raised when knowledge base query fails."""
 
 
-def query_kb(
+async def query_kb(
     query: str,
     image_paths: Optional[List[str]] = None,
 ) -> Tuple[str, List[str]]:
@@ -32,7 +35,7 @@ def query_kb(
         raise KBQueryError(f"run_all_sources.py not found at {script_path}")
 
     # 使用当前解释器（避免系统无 python 命令，仅有 python3 的情况）
-    cmd = [sys.executable, str(script_path)]
+    cmd: list[str] = [sys.executable, str(script_path)]
     if query:
         cmd += ["--query", query]
 
@@ -46,21 +49,22 @@ def query_kb(
     cmd += ["--output-images-dir", str(images_dir)]
 
     try:
-        proc = subprocess.run(
-            cmd,
-            check=False,
-            capture_output=True,
-            text=True,
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
+        stdout_bytes, stderr_bytes = await proc.communicate()
     except OSError as exc:
         raise KBQueryError(f"failed to start KB script: {exc!r}") from exc
 
     if proc.returncode != 0:
+        stderr_text = (stderr_bytes or b"").decode(errors="replace").strip()
         raise KBQueryError(
-            f"KB script exited with {proc.returncode}: {proc.stderr.strip()}"
+            f"KB script exited with {proc.returncode}: {stderr_text}"
         )
 
-    stdout = proc.stdout or ""
+    stdout = (stdout_bytes or b"").decode(errors="replace")
     markdown_lines: list[str] = []
     exported_images: list[str] = []
 
@@ -81,4 +85,3 @@ def query_kb(
 
     markdown_text = "\n".join(markdown_lines).strip()
     return markdown_text, exported_images
-

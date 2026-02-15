@@ -1,4 +1,4 @@
 """RS-Agent version."""
 
-__version__ = "0.1.29"
+__version__ = "0.3.0"
 

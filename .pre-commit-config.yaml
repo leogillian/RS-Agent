@@ -1,0 +1,12 @@
+# 安装：pip install pre-commit && pre-commit install
+# 此后 git commit 时会根据变更自动跑单测/集成测
+default_language_version:
+  python: python3.9
+repos:
+  - repo: local
+    hooks:
+      - id: run-tests-if-needed
+        name: run unit/integration tests when backend or tests changed
+        entry: bash scripts/run_tests_if_needed.sh
+        language: system
+        pass_filenames: false

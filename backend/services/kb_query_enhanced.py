@@ -51,7 +51,7 @@ def _merge_kb_markdown(results: List[Tuple[str, str]]) -> str:
     return "\n\n---\n\n".join(parts).strip()
 
 
-def enhanced_kb_query(
+async def enhanced_kb_query(
     user_query: str,
     image_paths: Optional[List[str]] = None,
 ) -> Dict[str, object]:
@@ -84,7 +84,7 @@ def enhanced_kb_query(
     t_expand = time.time()
     try:
         if getattr(settings, "kb_query_llm_enabled", True) and settings.llm_api_key and settings.llm_base_url:
-            expanded = llm_expand_kb_queries(q0, max_queries=getattr(settings, "kb_query_max_subqueries", 4))
+            expanded = await llm_expand_kb_queries(q0, max_queries=getattr(settings, "kb_query_max_subqueries", 4))
             expanded = [_normalize_query(x) for x in expanded]
             sub_queries = _dedup_keep_order([q0, *expanded])[: max(1, int(getattr(settings, "kb_query_max_subqueries", 4)))]
     except Exception as e:
@@ -105,7 +105,7 @@ def enhanced_kb_query(
     for i, sq in enumerate(sub_queries):
         t_kb = time.time()
         try:
-            md, imgs = query_kb(sq, image_paths if (i == 0 and image_paths) else None)
+            md, imgs = await query_kb(sq, image_paths if (i == 0 and image_paths) else None)
             had_success = True
         except KBQueryError as exc:
             kb_runs.append(
@@ -155,7 +155,7 @@ def enhanced_kb_query(
         if getattr(settings, "kb_query_llm_enabled", True) and settings.llm_api_key and settings.llm_base_url:
             limit = int(getattr(settings, "kb_query_max_merged_chars", 12000))
             kb_for_llm = raw_markdown if len(raw_markdown) <= limit else (raw_markdown[:limit] + "\n\n（已截断：KB 合并结果过长）")
-            final_markdown = llm_kb_synthesize(q0, kb_for_llm).strip() or raw_markdown
+            final_markdown = (await llm_kb_synthesize(q0, kb_for_llm)).strip() or raw_markdown
             used_llm = True
     except Exception as e:
         logger.warning("KB_QUERY synthesis failed, fallback to raw markdown: %s", e)

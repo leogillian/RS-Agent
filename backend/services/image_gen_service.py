@@ -1,4 +1,7 @@
-"""LLM 文生图服务：调用 DashScope 万相生成流程图 PNG，保存到静态目录并返回可访问 URL。"""
+"""LLM 文生图服务：调用 DashScope 万相生成流程图 PNG，保存到静态目录并返回可访问 URL。
+
+P0-3: uses ``httpx.AsyncClient`` for non-blocking HTTP.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +11,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-import requests
+import httpx
 
 from backend.config import settings
 
@@ -27,7 +30,7 @@ def _strip_mermaid_from_description(description: str) -> str:
     return out.strip()
 
 
-def generate_flowchart_image(flow_description: str) -> Optional[str]:
+async def generate_flowchart_image(flow_description: str) -> Optional[str]:
     """根据后端流程描述调用万相文生图，保存 PNG 并返回可访问 URL（如 /api/kb-images/flowchart_xxx.png）。
 
     若未配置 API、请求失败或保存失败则返回 None。
@@ -65,7 +68,8 @@ def generate_flowchart_image(flow_description: str) -> Optional[str]:
         "Content-Type": "application/json",
     }
     try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=90)
+        async with httpx.AsyncClient(timeout=httpx.Timeout(90.0)) as client:
+            resp = await client.post(url, headers=headers, json=payload)
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:
@@ -92,7 +96,8 @@ def generate_flowchart_image(flow_description: str) -> Optional[str]:
     name = f"flowchart_{uuid.uuid4().hex[:12]}.png"
     out_path = out_dir / name
     try:
-        r = requests.get(image_url_remote, timeout=30)
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+            r = await client.get(image_url_remote)
         r.raise_for_status()
         out_path.write_bytes(r.content)
     except Exception as e:

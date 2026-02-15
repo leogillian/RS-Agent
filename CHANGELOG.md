@@ -8,6 +8,88 @@
 
 ---
 
+## [0.3.0] - 2026-02-15
+
+### 后端
+
+- **P0-3 · 异步化 I/O**（对应 Roadmap P0-3）：
+  - `llm_service.py`：`requests.post()` → `httpx.AsyncClient`；`_chat()` 及所有公共函数（`llm_expand_kb_queries`、`llm_kb_synthesize`、`llm_collect`、`llm_build_draft_sections`、`llm_confirmer_parse`）全部改为 `async def`。
+  - `trading_kb_service.py`：`subprocess.run()` → `asyncio.create_subprocess_exec()`；`query_kb()` 改为 `async def`，子进程输出通过 `await proc.communicate()` 非阻塞获取。
+  - `image_gen_service.py`：`requests.post()` / `requests.get()` → `httpx.AsyncClient`；`generate_flowchart_image()` 改为 `async def`。
+  - `kb_query_enhanced.py`：`enhanced_kb_query()` 改为 `async def`，内部对 LLM 和 KB 的调用全部 `await`。
+  - `confirmer_service.py`：`parse_feedback()` 改为 `async def`（调用 `await llm_confirmer_parse()`）。
+  - `orchestrator_controller.py`：`_ensure_collect()`、`get_open_questions()`、`answer_questions()` 改为 `async def`；内部的 `query_kb()`、`llm_collect()`、`llm_build_draft_sections()` 调用全部 `await`。
+  - `agent_pipeline.py`：`process()` 从同步 generator 改为 **async generator**（`AsyncGenerator`）；`run()` 改为 `async def`；所有 `yield from` 替换为 `async for ... yield`；所有服务调用改为 `await`。
+  - `routers/agent.py`：`agent_stream_endpoint`、`agent_endpoint` 改为 `async def`；SSE 生成器改为 `async def gen()`。
+  - DB 层（`db.py`）保持同步 SQLite（本地微秒级 I/O，不构成瓶颈），roadmap 不要求异步化。
+- **P0-4 · API Key 认证**（对应 Roadmap P0-4）：
+  - 新增 `backend/auth.py`：基于 `fastapi.security.HTTPBearer` 的 `require_api_key` 依赖；检查 `Authorization: Bearer <key>` 与 `RS_AGENT_API_KEY` 环境变量匹配。
+  - `config.py`：新增 `api_key` 属性，读取 `RS_AGENT_API_KEY` 环境变量。
+  - `routers/agent.py`：`APIRouter` 添加 `dependencies=[Depends(require_api_key)]`，所有 `/api/*` 端点自动受保护。
+  - `/health` 端点无需认证（不在 router 内，直接挂在 `app` 上）。
+  - 若 `RS_AGENT_API_KEY` 未设置或为空，认证自动禁用，**向后兼容**。
+  - 未授权请求返回 `401 Unauthorized`，含 `WWW-Authenticate: Bearer` 头。
+
+### 配置
+
+- `.env.example`：新增 `RS_AGENT_API_KEY` 示例与说明。
+
+### 文档与规范
+
+- README：更新版本号至 0.3.0。
+- CHANGELOG：记录 P0-3（异步化）与 P0-4（认证）改动。
+- roadmap.md：删除已完成的 P0-3、P0-4 条目。
+
+---
+
+## [0.2.0] - 2026-02-15
+
+### 后端
+
+- **P0-1 · AgentPipeline 服务层**（对应 Roadmap P0-1）：
+  - 新增 `services/agent_pipeline.py`，将 `routers/agent.py` 中的全部业务逻辑（意图识别、KB 查询、Orchestrator 状态推进、Confirmer/Defender/Editor 协调、会话与消息持久化、执行 trace 生成）抽取到 `AgentPipeline` 类。
+  - `AgentPipeline.process()` 以 **generator** 形式输出 `trace/final/error` 事件，stream 与非 stream 端点共用同一管道。
+  - `AgentPipeline.run()` 提供非流式快捷调用，内部消费 generator 返回最终结果。
+  - `routers/agent.py` 精简为纯协议转换层（~160 行，原 ~870 行），仅负责 HTTP 请求解析、SSE 编码、上传管理与 CRUD 端点。
+- **P0-2 · Orchestrator 会话持久化**（对应 Roadmap P0-2）：
+  - `db.py` 新增 `sessions` 表（`id, state, session_data, created_at, updated_at`），以及 `save_session`（upsert）、`load_session`、`delete_session` 三个函数。
+  - `OrchestratorSession` 新增 `to_dict()` / `from_dict()` 序列化方法。
+  - `orchestrator_controller.py` 中移除内存 `_SESSIONS` 字典，所有会话读写改为 SQLite 持久化；`create_session`、`get_open_questions`、`answer_questions`、`confirm_draft`、`apply_defend_answers` 每次状态变更后自动调用 `_persist(sess)` 落库。
+  - 新增 `persist_session()` 公共 API，供 `AgentPipeline` 在外部修改 session 后落库。
+  - **重启后按 sessionId 可恢复未完成的 Orchestrator 流程**。
+
+### 文档与规范
+
+- README：更新目录结构说明，反映 `agent_pipeline.py` 与 session 持久化改动。
+- CHANGELOG：记录 P0-1 与 P0-2 改动。
+- roadmap.md：移除已完成的 P0-1 与 P0-2 条目。
+
+---
+
+## [0.1.31] - 2026-02-15
+
+### 文档与规范
+
+- **迭代计划**：新增 `roadmap.md`，记录 Phase 1（P0）→ Phase 2（P1）→ Phase 3 的迭代计划及维护说明（完成后从 roadmap 删除该条）。
+- **README**：「后续迭代方向」改为仅保留对 `roadmap.md` 的链接，原列表内容移除。
+
+---
+
+## [0.1.30] - 2026-02-15
+
+### 后端
+
+- **上传清理**：`_UPLOAD_STORE` 改为按时间清理（1 小时过期），写入 `(path, created_at)`，新增 `_cleanup_old_uploads()`，上传与解析图片路径时触发清理，避免长期占用内存/磁盘。
+- **统一错误响应**：全局异常处理 `RequestValidationError` / `HTTPException` / `Exception`，生产环境不向客户端暴露堆栈、路径、配置或密钥。
+- **CORS 收紧**：保持 `allow_origins` 不变，`allow_methods` 改为 `["GET", "POST", "OPTIONS"]`，`allow_headers` 改为 `["Content-Type", "Authorization", "Accept"]`。
+
+### 测试与脚本
+
+- **单测/集成测**：新增 `tests/unit/test_upload_cleanup.py`（上传清理逻辑）、`tests/integration/test_api.py`（/health、/api/agent、/api/version 及错误响应不泄露敏感信息）；新增 `tests/conftest.py`、`backend/requirements-test.txt`（pytest）。
+- **测试自动执行**：新增 `scripts/run_tests_if_needed.sh`，根据 git 变更路径决定跑 unit/integration；新增 `.pre-commit-config.yaml`，可 `pre-commit install` 后在 commit 时自动跑测试。
+
+---
+
 ## [0.1.29] - 2026-02-13
 
 ### 前端

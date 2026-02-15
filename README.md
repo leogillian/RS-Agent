@@ -1,4 +1,4 @@
-# RS-Agent 项目说明（v0.1.28）
+# RS-Agent 项目说明（v0.3.0）
 
 RS-Agent 是一个独立的前后端项目，通过单一入口为交易系统提供智能助手能力：
 
@@ -13,12 +13,14 @@ RS-Agent 是一个独立的前后端项目，通过单一入口为交易系统�
 
 - `backend/`：FastAPI 后端
   - `app.py`：应用入口，暴露 `/health` 与 `/api` 路由；
-  - `routers/agent.py`：`/api/agent` 与 `/api/version` 接口；
+  - `routers/agent.py`：`/api/agent` 与 `/api/version` 接口（仅协议转换，业务逻辑委托给 service）；
   - `services/`：
+    - `agent_pipeline.py`：**AgentPipeline** — stream / 非 stream 共用的统一业务逻辑管道（P0-1）；
     - `intent_router.py`：根据文本判断意图（KB_QUERY / ORCH_FLOW）；
     - `trading_kb_service.py`：封装 `trading-knowledge-base/scripts/run_all_sources.py` 调用；
-    - `orchestrator_controller.py`：简化版 Orchestrator 状态机（v0.1.5 版本仅支持一轮提问 + 简单草稿）；
+    - `orchestrator_controller.py`：Orchestrator 状态机，会话通过 SQLite 持久化（P0-2）；
   - `config.py`：读取 trading-knowledge-base 技能目录、脚本与图片输出目录等配置；
+  - `db.py`：SQLite 持久化（conversations、messages、sessions 表）；
   - `__version__.py`：当前后端版本号。
 - `frontend/`：React + Vite + TypeScript 单页前端
   - `index.html`：入口 HTML；
@@ -69,15 +71,23 @@ KB_QUERY / ORCH_FLOW 路径均可能调用 LLM（KB_QUERY 用于检索增强与�
 
 **诊断**：`GET /health` 会返回 `llm_configured`、`llm_model` 等，用于确认 LLM 是否生效。若未配置或调用失败，系统会静默回退到规则版逻辑，此时后端控制台会打印 `LLM ... 调用失败，已回退到...` 的警告。
 
+## 运行单测/集成测
+
+在 **RS-Agent 根目录**（本仓库根目录）执行，使用项目虚拟环境中的 Python/pip，避免系统未装或 PATH 未配置时报错：
+
+```bash
+./backend/.venv/bin/pip install -r backend/requirements-test.txt   # 首次需安装 pytest
+./backend/.venv/bin/python -m pytest tests/ -v
+```
+
+或先激活虚拟环境：`source backend/.venv/bin/activate`，再执行 `pip install -r backend/requirements-test.txt`、`python -m pytest tests/ -v`。  
+提交时自动跑测试：`pip install pre-commit && pre-commit install`（见 `.pre-commit-config.yaml`）。
+
 ## 端到端测试
 
 从新会话到产出最终需求分析文档的完整步骤见：**[端到端测试步骤.md](./端到端测试步骤.md)**（含各回合请求示例与检查点）。
 
 ## 后续迭代方向
 
-- 增加会话与消息持久化（Conversation / Message），支持历史会话查询与回放；
-- **KB_QUERY 提质（方案 B）**：由 LLM 将用户问题扩展为多条 query → 多次 KB 检索合并去重 → LLM 综合输出；并抽象可复用的 `retrieve` 函数，后续 ORCH_FLOW 可复用同一检索增强能力；
-- 逐步对齐 Orchestrator SKILL 中的完整状态机（COLLECT / RETRIEVE / BUILD_DRAFT / CONFIRM / DEFEND / Editor）；
-- 导出为 PDF/Word 与模板化输出增强；
-- 按 CHANGELOG 中的版本规划依次演进。
+详见 **[roadmap.md](./roadmap.md)**，按 Phase 1（P0）→ Phase 2（P1）→ Phase 3 分阶段实施；某项完成后在 CHANGELOG 发版并从 roadmap 中删除该条。
 

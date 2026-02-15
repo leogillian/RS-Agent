@@ -4,10 +4,14 @@
 - COLLECT（调用 TradingKBService 做一次知识库检索）；
 - 一轮 open_questions；
 - 用户回答后，生成与 demand_analysis_doc_v1 结构对齐的简化草稿。
+
+P0-2：会话通过 ``db.save_session`` / ``db.load_session`` 持久化到 SQLite；
+重启后可按 sessionId 恢复未完成的 Orchestrator 流程。
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -17,6 +21,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from backend.config import settings
+from backend.db import save_session as _db_save, load_session as _db_load
 from backend.services.trading_kb_service import query_kb
 from backend.services.llm_service import llm_build_draft_sections, llm_collect
 from backend.services.kb_artifacts import (
@@ -29,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class OrchestratorSession:
-    """In-memory session for orchestrator flow."""
+    """Orchestrator session with serialisation support for DB persistence."""
 
     session_id: str
     user_request: str
@@ -42,24 +47,85 @@ class OrchestratorSession:
     last_defend_questions: List[str] = field(default_factory=list)  # DEFEND 轮追问的问题，用于写入 clarification_log
     requirement_structured: dict = field(default_factory=dict)  # P4: 结构化需求，COLLECT/用户回复后更新
 
+    # -- serialisation ---------------------------------------------------
 
-_SESSIONS: Dict[str, OrchestratorSession] = {}
+    def to_dict(self) -> dict:
+        """Serialise to a JSON-safe dict for DB persistence."""
+        return {
+            "session_id": self.session_id,
+            "user_request": self.user_request,
+            "state": self.state,
+            "open_questions": list(self.open_questions),
+            "user_answers": list(self.user_answers),
+            "knowledge_markdown": self.knowledge_markdown,
+            "kb_image_urls": list(self.kb_image_urls),
+            "draft_struct": self.draft_struct,
+            "last_defend_questions": list(self.last_defend_questions),
+            "requirement_structured": self.requirement_structured,
+        }
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "OrchestratorSession":
+        """Reconstruct from a dict (loaded from DB JSON)."""
+        return cls(
+            session_id=data["session_id"],
+            user_request=data.get("user_request", ""),
+            state=data.get("state", "COLLECT"),
+            open_questions=list(data.get("open_questions") or []),
+            user_answers=list(data.get("user_answers") or []),
+            knowledge_markdown=data.get("knowledge_markdown", ""),
+            kb_image_urls=list(data.get("kb_image_urls") or []),
+            draft_struct=data.get("draft_struct") or {},
+            last_defend_questions=list(data.get("last_defend_questions") or []),
+            requirement_structured=data.get("requirement_structured") or {},
+        )
+
+
+# ---------------------------------------------------------------------------
+# Persistence helpers (P0-2)
+# ---------------------------------------------------------------------------
+
+def _persist(sess: OrchestratorSession) -> None:
+    """Save session to SQLite."""
+    _db_save(
+        session_id=sess.session_id,
+        state=sess.state,
+        session_data=json.dumps(sess.to_dict(), ensure_ascii=False),
+    )
+
+
+def persist_session(sess: OrchestratorSession) -> None:
+    """Public API: persist a session after external mutations (e.g. in AgentPipeline)."""
+    _persist(sess)
+
+
+# ---------------------------------------------------------------------------
+# Session CRUD
+# ---------------------------------------------------------------------------
 
 def create_session(user_request: str) -> OrchestratorSession:
-    """Create a new orchestrator session in COLLECT state."""
+    """Create a new orchestrator session in COLLECT state and persist it."""
     session_id = str(uuid.uuid4())
     sess = OrchestratorSession(
         session_id=session_id,
         user_request=user_request,
         state="COLLECT",
     )
-    _SESSIONS[session_id] = sess
+    _persist(sess)
     return sess
 
 
 def get_session(session_id: str) -> Optional[OrchestratorSession]:
-    return _SESSIONS.get(session_id)
+    """Load session from DB.  Returns None if not found."""
+    row = _db_load(session_id)
+    if not row:
+        return None
+    try:
+        data = json.loads(row["session_data"])
+        return OrchestratorSession.from_dict(data)
+    except (json.JSONDecodeError, KeyError) as exc:
+        logger.warning("Failed to deserialise session %s: %s", session_id, exc)
+        return None
 
 
 def _extract_kb_mentions(kb_text: str, max_mentions: int = 5) -> List[str]:
@@ -131,14 +197,14 @@ def _derive_open_questions(user_request: str, knowledge_markdown: str) -> List[s
     return ["请确认或补充上述需求，回复后继续。"]
 
 
-def _ensure_collect(sess: OrchestratorSession) -> None:
+async def _ensure_collect(sess: OrchestratorSession) -> None:
     """Run a minimal COLLECT step: 调一次 KB，生成 open_questions，并落 requirement_structured（P0/P4）。
 
     优先调用 Qwen（llm_collect）生成结构化需求与 open_questions；若 LLM 不可用或报错，则回退到规则版。
     """
     if sess.knowledge_markdown:
         return
-    kb_text, exported_paths = query_kb(sess.user_request, [])
+    kb_text, exported_paths = await query_kb(sess.user_request, [])
     sess.knowledge_markdown = kb_text
 
     # 更可靠的候选图：从 KB markdown 的 path/page 引用中抽取 PDF 页最大图（更像流程图），
@@ -152,7 +218,7 @@ def _ensure_collect(sess: OrchestratorSession) -> None:
     image_paths = best_paths or (exported_paths or [])
     sess.kb_image_urls = [f"/api/kb-images/{os.path.basename(p)}" for p in image_paths]
     try:
-        collect = llm_collect(sess.user_request, kb_text)
+        collect = await llm_collect(sess.user_request, kb_text)
         sess.requirement_structured = {
             "demand_source": collect.get("demand_source") or sess.user_request,
             "product_statement": collect.get("product_statement") or "",
@@ -169,11 +235,12 @@ def _ensure_collect(sess: OrchestratorSession) -> None:
             "open_questions": list(sess.open_questions),
         }
     sess.state = "WAITING_ANSWERS"
+    _persist(sess)
 
 
-def get_open_questions(sess: OrchestratorSession) -> List[str]:
+async def get_open_questions(sess: OrchestratorSession) -> List[str]:
     """Ensure COLLECT/RETRIEVE has run and return open questions."""
-    _ensure_collect(sess)
+    await _ensure_collect(sess)
     return list(sess.open_questions)
 
 
@@ -247,19 +314,19 @@ def _derive_system_changes_from_user(user_request: str, answer_text: str) -> tup
     return (overview, frontend_desc, backend_desc, notification_desc)
 
 
-def answer_questions(session_id: str, answer_text: str) -> Tuple[OrchestratorSession, str]:
+async def answer_questions(session_id: str, answer_text: str) -> Tuple[OrchestratorSession, str]:
     """Consume user's answer and build a draft aligned with demand_analysis_doc_v1."""
-    sess = _SESSIONS.get(session_id)
+    sess = get_session(session_id)
     if not sess:
         raise KeyError(f"session {session_id} not found")
 
-    _ensure_collect(sess)
+    await _ensure_collect(sess)
     sess.user_answers.append(answer_text)
     background = sess.user_answers[-1] if sess.user_answers else sess.user_request
 
     # P4：用户回复后再调 KB（再 COLLECT / RETRIEVE），用返回更新 knowledge 与图片列表
     requery = f"{sess.user_request} {answer_text}".strip()
-    extra_kb, extra_paths = query_kb(requery, [])
+    extra_kb, extra_paths = await query_kb(requery, [])
     if extra_kb:
         sess.knowledge_markdown = (sess.knowledge_markdown or "") + "\n\n--- 根据用户补充检索 ---\n\n" + extra_kb
     if extra_paths:
@@ -312,7 +379,7 @@ def answer_questions(session_id: str, answer_text: str) -> Tuple[OrchestratorSes
     draft_demand_source: str = sess.user_request
     draft_product_statement: str = background
     try:
-        sections = llm_build_draft_sections(
+        sections = await llm_build_draft_sections(
             user_request=sess.user_request,
             user_answer=answer_text,
             requirement_structured=sess.requirement_structured,
@@ -381,6 +448,7 @@ def answer_questions(session_id: str, answer_text: str) -> Tuple[OrchestratorSes
     sess.draft_struct = draft
     # 生成草稿后进入 CONFIRMING 流程，由调用方决定是直接确认还是带修改意见
     sess.state = "DRAFT_READY"
+    _persist(sess)
 
     # 根据结构生成 Markdown 草稿（后续可交给 EditorService 做更丰富排版）
     kb_excerpt = sess.knowledge_markdown[:800] + ("..." if len(sess.knowledge_markdown) > 800 else "")
@@ -429,7 +497,7 @@ def answer_questions(session_id: str, answer_text: str) -> Tuple[OrchestratorSes
 
 def confirm_draft(session_id: str, feedback: str) -> Tuple[OrchestratorSession, str]:
     """Handle user feedback on draft: 简单区分 confirmed / revised."""
-    sess = _SESSIONS.get(session_id)
+    sess = get_session(session_id)
     if not sess:
         raise KeyError(f"session {session_id} not found")
 
@@ -449,12 +517,13 @@ def confirm_draft(session_id: str, feedback: str) -> Tuple[OrchestratorSession, 
         status = "revised"
 
     sess.state = "DEFENDING"
+    _persist(sess)
     return sess, status
 
 
 def apply_defend_answers(session_id: str, answer_text: str) -> OrchestratorSession:
     """在 DEFEND 阶段应用用户补充的说明，更新 business_changes，并追加 clarification_log。"""
-    sess = _SESSIONS.get(session_id)
+    sess = get_session(session_id)
     if not sess:
         raise KeyError(f"session {session_id} not found")
 
@@ -478,5 +547,6 @@ def apply_defend_answers(session_id: str, answer_text: str) -> OrchestratorSessi
             "source": "defend",
         })
     sess.state = "DEFENDING"
+    _persist(sess)
     return sess
 

@@ -1,0 +1,2 @@
+# 测试依赖，用于单测/集成测：pip install -r backend/requirements-test.txt
+pytest>=7.0.0

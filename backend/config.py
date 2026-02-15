@@ -87,6 +87,11 @@ class Settings:
         self.kb_query_max_subqueries = int(os.environ.get("RS_AGENT_KB_QUERY_MAX_SUBQUERIES", "4") or "4")
         self.kb_query_max_merged_chars = int(os.environ.get("RS_AGENT_KB_QUERY_MAX_MERGED_CHARS", "12000") or "12000")
 
+        # ==== API 认证 ====
+        # 若设置了 RS_AGENT_API_KEY，则所有 /api/* 端点需要 Authorization: Bearer <key>
+        # 留空或未设置则不启用认证（向后兼容）
+        self.api_key = os.environ.get("RS_AGENT_API_KEY", "").strip()
+
         # ==== 文生图（流程图）配置：DashScope 万相 ====
         self.image_gen_enabled = os.environ.get("RS_AGENT_IMAGE_GEN_ENABLED", "true").lower() in ("true", "1", "yes")
         self.image_gen_url = os.environ.get(

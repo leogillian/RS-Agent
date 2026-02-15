@@ -15,13 +15,13 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import requests
+import httpx
 
 from backend.config import settings
 
 
-def _chat(messages: List[Dict[str, Any]], temperature: float = 0.2, max_tokens: int = 2048) -> str:
-    """通过 HTTP API 调用 Chat Completions，返回单条 content。messages 中 content 可为 str 或多模态数组。"""
+async def _chat(messages: List[Dict[str, Any]], temperature: float = 0.2, max_tokens: int = 2048) -> str:
+    """通过 httpx.AsyncClient 调用 Chat Completions，返回单条 content。messages 中 content 可为 str 或多模态数组。"""
     if not settings.llm_api_key:
         raise RuntimeError(
             "LLM API Key 未配置。请设置环境变量 LLM_API_KEY、DASHSCOPE_API_KEY 或 OPENAI_API_KEY。"
@@ -41,7 +41,8 @@ def _chat(messages: List[Dict[str, Any]], temperature: float = 0.2, max_tokens: 
         "temperature": temperature,
         "max_tokens": max_tokens,
     }
-    resp = requests.post(url, headers=headers, json=payload, timeout=120)
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
+        resp = await client.post(url, headers=headers, json=payload)
     resp.raise_for_status()
     data = resp.json()
     content = data.get("choices", [{}])[0].get("message", {}).get("content")
@@ -54,7 +55,7 @@ def _chat(messages: List[Dict[str, Any]], temperature: float = 0.2, max_tokens: 
     return str(content)
 
 
-def llm_expand_kb_queries(user_query: str, max_queries: int = 4) -> List[str]:
+async def llm_expand_kb_queries(user_query: str, max_queries: int = 4) -> List[str]:
     """KB_QUERY 方案 B：将用户问题扩展为多条检索 query（不输出答案）。
 
     返回 queries 列表（不保证含原 query，调用方应自行将原 query 放在首位）。
@@ -107,7 +108,7 @@ def llm_expand_kb_queries(user_query: str, max_queries: int = 4) -> List[str]:
 """.strip(),
         },
     ]
-    raw = _chat(messages, temperature=0.2, max_tokens=512)
+    raw = await _chat(messages, temperature=0.2, max_tokens=512)
     try:
         data = json.loads(raw)
         qs = data.get("queries")
@@ -126,7 +127,7 @@ def llm_expand_kb_queries(user_query: str, max_queries: int = 4) -> List[str]:
     return [ln for ln in lines if ln][:max_q]
 
 
-def llm_kb_synthesize(user_query: str, kb_markdown_merged: str) -> str:
+async def llm_kb_synthesize(user_query: str, kb_markdown_merged: str) -> str:
     """KB_QUERY：基于（合并后的）KB 检索结果进行综合回答，严格禁止编造。输出 Markdown。"""
     uq = (user_query or "").strip()
     kb = (kb_markdown_merged or "").strip()
@@ -187,10 +188,10 @@ def llm_kb_synthesize(user_query: str, kb_markdown_merged: str) -> str:
 """.strip(),
         },
     ]
-    return _chat(messages, temperature=0.2, max_tokens=2048)
+    return await _chat(messages, temperature=0.2, max_tokens=2048)
 
 
-def llm_collect(user_request: str, kb_markdown: str) -> Dict[str, Any]:
+async def llm_collect(user_request: str, kb_markdown: str) -> Dict[str, Any]:
     """COLLECT 阶段：基于用户原话 + KB 文本，生成结构化需求与 open_questions。"""
     messages: List[Dict[str, str]] = [
         {
@@ -223,7 +224,7 @@ def llm_collect(user_request: str, kb_markdown: str) -> Dict[str, Any]:
 """,
         },
     ]
-    raw = _chat(messages)
+    raw = await _chat(messages)
     data = json.loads(raw)
     demand_source = data.get("demand_source") or user_request
     product_statement = data.get("product_statement") or ""
@@ -249,7 +250,7 @@ def _image_path_to_data_url(path: str) -> Optional[str]:
     return f"data:{mime};base64,{b64}"
 
 
-def llm_build_draft_sections(
+async def llm_build_draft_sections(
     user_request: str,
     user_answer: str,
     requirement_structured: Dict[str, Any],
@@ -355,12 +356,12 @@ def llm_build_draft_sections(
         },
         {"role": "user", "content": user_content},
     ]
-    raw = _chat(messages)
+    raw = await _chat(messages)
     sections = json.loads(raw)
     return sections
 
 
-def llm_confirmer_parse(draft_output: Dict[str, Any], user_message: str) -> Dict[str, Any]:
+async def llm_confirmer_parse(draft_output: Dict[str, Any], user_message: str) -> Dict[str, Any]:
     """Confirmer 阶段：解析用户对草稿的反馈，返回 5 种 status 与建议修改。"""
     messages: List[Dict[str, str]] = [
         {
@@ -398,6 +399,6 @@ def llm_confirmer_parse(draft_output: Dict[str, Any], user_message: str) -> Dict
 """,
         },
     ]
-    raw = _chat(messages)
+    raw = await _chat(messages)
     return json.loads(raw)
 
