@@ -1,0 +1,50 @@
+# Python
+backend/.venv/
+backend/venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Node (frontend)
+frontend/node_modules/
+frontend/dist/
+
+# Environment & secrets (保留 .env.example 作示例)
+.env
+.env.local
+.env.*.local
+
+# 项目数据与运行时产物
+data/
+backend/data/
+rs_agent_kb_images/
+*.db
+*.sqlite
+*.sqlite3
+
+# 测试与覆盖率
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE & OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 日志
+*.log
+logs/
+
+# 上传临时文件（若存本地）
+uploads/
