@@ -78,6 +78,14 @@ class Settings:
         # 默认模型名；DashScope 兼容模式有效值为 qwen-turbo/qwen-plus/qwen-max 等
         self.llm_model = os.environ.get("RS_AGENT_LLM_MODEL", "qwen-plus")
 
+        # ==== LLM 重试（P1-5）====
+        # 最大重试次数（默认 3）
+        self.llm_max_retries = int(os.environ.get("RS_AGENT_LLM_MAX_RETRIES", "3") or "3")
+        # 重试最小等待秒数（默认 1）
+        self.llm_retry_min_wait = float(os.environ.get("RS_AGENT_LLM_RETRY_MIN_WAIT", "1") or "1")
+        # 重试最大等待秒数（默认 10）
+        self.llm_retry_max_wait = float(os.environ.get("RS_AGENT_LLM_RETRY_MAX_WAIT", "10") or "10")
+
         # ==== KB_QUERY 方案 B（LLM 多 query 检索增强 + 综合输出）====
         self.kb_query_llm_enabled = os.environ.get("RS_AGENT_KB_QUERY_LLM_ENABLED", "true").lower() in (
             "true",
@@ -86,6 +94,14 @@ class Settings:
         )
         self.kb_query_max_subqueries = int(os.environ.get("RS_AGENT_KB_QUERY_MAX_SUBQUERIES", "4") or "4")
         self.kb_query_max_merged_chars = int(os.environ.get("RS_AGENT_KB_QUERY_MAX_MERGED_CHARS", "12000") or "12000")
+
+        # ==== 会话超时与清理（P1-4）====
+        # sessions 表中超过 TTL 的记录将被后台定时清理（秒，默认 7200 = 2h）
+        self.session_ttl_seconds = int(os.environ.get("RS_AGENT_SESSION_TTL_SECONDS", "7200") or "7200")
+        # 后台清理检查间隔（秒，默认 300 = 5min）
+        self.session_cleanup_interval_seconds = int(
+            os.environ.get("RS_AGENT_SESSION_CLEANUP_INTERVAL", "300") or "300"
+        )
 
         # ==== API 认证 ====
         # 若设置了 RS_AGENT_API_KEY，则所有 /api/* 端点需要 Authorization: Bearer <key>

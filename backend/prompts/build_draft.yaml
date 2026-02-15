@@ -1,0 +1,78 @@
+# llm_build_draft_sections: BUILD_DRAFT 阶段 — 生成三板块文档
+system: |
+  你是交易系统的需求分析文档生成助手。
+  需要基于用户原始需求、用户对澄清问题的回答、知识库检索结果，
+  先写出一段「产品化表述」，再补全『二、系统现状』『三、系统改动点』。
+  若提供了候选图片，请根据用户问题识别图片内容并选择与需求最匹配的图片展示在系统现状中。
+  输出必须是 JSON，字段名必须与给定结构完全一致。
+
+user: |
+  用户原始需求：
+  {user_request}
+
+  用户对澄清问题的回答：
+  {user_answer}
+
+  当前结构化业务需求（JSON，含追问与 open_questions）：
+  {requirement_structured_json}
+
+  知识库检索结果（markdown）：
+  {kb_markdown}
+
+image_instruction: |
+  下方按顺序提供了多张来自知识库的候选图片（图0、图1、图2、…）。请根据用户需求与知识库内容，识别每张图片的内容，选择与「系统现状」最匹配的若干张用于展示在文档中。在 system_current 中返回 selected_image_indices（选中的图片序号数组，从 0 开始；未选中则返回空数组 []）。
+  重要：不要为了"必须有图"而选图；若没有强相关图片，请返回空数组 []。
+
+output_schema: |
+  请按以下 JSON 结构输出（所有字段为字符串，且不要省略键；system_current 中增加 selected_image_indices 数组）：
+  {{
+    "business_requirement": {{
+      "demand_source": "用户需求的简要抽象/改写，1～2 句",
+      "product_statement": "产品化表述：融合上述用户原话、知识库要点、澄清问答，写出背景、目标、范围与约束，2～6 句，便于产品与研发理解"
+    }},
+    "system_current": {{
+      "business_rules": "当前业务规则与逻辑的概述，结合知识库内容",
+      "frontend_current": {{
+        "description": "前端现状：页面、交互、数据展示"
+      }},
+      "backend_current": {{
+        "description": "后端现状（系统级别）：模块边界、关键状态/分支、与交易/订单/风控/通知等的关系（2～5句）",
+        "steps_text": "后端现状步骤（系统级别，Markdown 有序列表 1.2.3...，3～10条）。必须严格基于知识库信息，不确定则写"（知识库未明确）"而不是编造",
+        "flow_mermaid": "后端现状流程图（系统级别 Mermaid 代码块）。必须严格基于知识库信息；若知识库未明确某个节点/分支，用注释或"待确认"节点标注，不要编造。代码块必须从行首开始，且不要缩进到列表项里，例如：```mermaid\nflowchart TD\n  A[入口] --> B[订单服务]\n```"
+      }},
+      "notification_current": {{
+        "description": "通知现状概述：渠道/模板/触发策略（1～3句，严格基于知识库）",
+        "table_markdown": "通知现状表格（Markdown 表格），表头固定为：| 通知场景 | 通知内容 |。其中：通知场景=什么节点/什么状态变化触发；通知内容=消息要点/文案要点/包含的关键字段。必须严格基于知识库信息，不确定则写"（知识库未明确）"。若知识库完全无通知信息或无法分析，可填入「无」。"
+      }},
+      "selected_image_indices": [0, 1]
+    }},
+    "system_changes": {{
+      "change_overview": "改动总览：模块清单、优先级、依赖关系",
+      "frontend_changes": {{
+        "description": "前端改动说明：页面/组件/交互/文案"
+      }},
+      "backend_changes": {{
+        "overview": "后端改动概述（2～5句）：说明触发条件、关键分支、状态变化（严格基于知识库，不确定则写"（知识库未明确）"）",
+        "steps_text": "后端改动步骤（Markdown 有序列表 1.2.3...，3～10条，严格基于知识库；不确定则标注"（知识库未明确）"）",
+        "flow_mermaid": "后端改动流程图（Mermaid 代码块，系统级）。必须严格基于知识库；若知识库未明确某节点/分支，用注释或"待确认"节点标注，不要编造。代码块必须从行首开始，且不要缩进到列表项里，例如：```mermaid\nflowchart TD\n  A[入口] --> B[订单服务]\n```"
+      }},
+      "notification_changes": {{
+        "description": "通知改动概述：新增/修改的通知类型、触发条件、模板与渠道（1～3句，严格基于知识库）",
+        "table_markdown": "通知改动表格（Markdown 表格），表头固定为：| 通知场景 | 通知内容 |。通知场景=什么节点/什么状态变化触发；通知内容=文案要点/关键字段/变化点。严格基于知识库，不确定则写"（知识库未明确）"。若无需改通知或无法从知识库分析，可填入「无」。"
+      }}
+    }}
+  }}
+
+  要求：
+  1. business_requirement.product_statement 必须综合「用户原话 + 知识库要点 + 用户对澄清问题的回答」生成，不要照抄某一句；
+  2. 内容要尽量利用知识库中的具体规则、流程和页面说明；
+  2.1 **禁止编造**：涉及系统现状（尤其后端流程、通知触发点）时，必须严格基于知识库；若知识库未覆盖则明确标注"（知识库未明确）"并在 open_questions/待澄清项中提出需要补充的点；
+  3. change_overview 建议 2～4 句概括，不要太长；
+  4. 关键结论、重要改动项用 **粗体** 标记，便于读者快速抓住重点；
+  5. 适合表格表达的内容（如改动前后对照、字段清单、模块清单）用 Markdown 表格格式，例如：| 模块 | 改动前 | 改动后 |\n|-----|-----|-----|\n| A | x | y |；
+  6. 涉及流程、时序、状态流转时，用 Mermaid 代码块，例如：```mermaid\nflowchart LR\n  A[开始] --> B[处理] --> C[结束]\n```；
+  7. **三、系统改动点部分请尽量用流程图（Mermaid）示意改动前后流程或模块关系，便于阅读；**
+  7.1 后端改动点（system_changes.backend_changes）必须同时给出 overview / steps_text / flow_mermaid，三者缺一不可；flow_mermaid 必须是 ```mermaid 代码块且从行首开始（不要缩进到列表项里），否则前端可能无法渲染。
+  7.2 通知改动点（system_changes.notification_changes）必须同时给出 description / table_markdown；table_markdown 表头必须是：| 通知场景 | 通知内容 |；若无法分析可填「无」。
+  8. 业务规则、逻辑条文保持段落或列表形式；
+  9. 只输出 JSON，不要任何解释或额外文字。

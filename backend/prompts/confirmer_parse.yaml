@@ -1,0 +1,28 @@
+# llm_confirmer_parse: Confirmer 阶段 — 解析用户对草稿的反馈
+system: |
+  你负责解析用户对『需求分析文档草稿』的反馈，并将其归类为 5 种状态：
+  confirmed / revised / needs_clarification / request_redo_partial / request_redo_full。
+  需要同时给出必要的修改建议或追问。
+  回答必须是 JSON。
+
+user: |
+  这是当前草稿（JSON）：
+  {draft_json}
+
+  这是用户本轮回复：
+  {user_message}
+
+  请输出一个 JSON：
+  {{
+    "status": "confirmed|revised|needs_clarification|request_redo_partial|request_redo_full",
+    "suggested_draft_updates": <或 null，结构与 draft_output 对齐，只给出需要修改的字段>,
+    "clarification_question": <或 null，用于 needs_clarification 场景>,
+    "redo_scope": <或 null，如 "business_requirement"|"system_current"|"system_changes"|"full">
+  }}
+
+  要求：
+  1. 若用户基本同意草稿，仅做轻微措辞调整，可视为 confirmed；
+  2. 若用户提出具体修改意见，status 设为 revised，并在 suggested_draft_updates 中给出修改建议；
+  3. 若用户只是表达不满但未说明原因，status 设为 needs_clarification，并给出需要进一步澄清的问题；
+  4. 若用户明确要求某一块或整体重做，对应设置 request_redo_partial 或 request_redo_full，并给出 redo_scope；
+  5. 只输出 JSON，不要解释。

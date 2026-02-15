@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,17 +15,42 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import settings
-from backend.db import init_db
+from backend.db import cleanup_expired_sessions, init_db
 from backend.routers import agent as agent_router
 from backend.__version__ import __version__
+
+logger = logging.getLogger(__name__)
+
+
+async def _session_cleanup_loop() -> None:
+    """P1-4: 后台定时清理超时会话。"""
+    interval = max(30, settings.session_cleanup_interval_seconds)
+    ttl = settings.session_ttl_seconds
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            count = cleanup_expired_sessions(ttl)
+            if count > 0:
+                logger.info("Session cleanup: removed %d expired session(s) (TTL=%ds)", count, ttl)
+        except Exception:
+            logger.exception("Session cleanup error")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """启动时初始化 DB 与图片目录；关闭时暂无逻辑。"""
+    """启动时初始化 DB 与图片目录；后台运行会话清理任务。"""
     init_db()
     Path(settings.images_output_dir_abs).mkdir(parents=True, exist_ok=True)
-    yield
+    # P1-4: 启动后台清理任务
+    cleanup_task = asyncio.create_task(_session_cleanup_loop())
+    try:
+        yield
+    finally:
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="RS-Agent Backend", version=__version__, lifespan=lifespan)

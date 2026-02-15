@@ -8,6 +8,40 @@
 
 ---
 
+## [0.4.0] - 2026-02-15
+
+### 后端
+
+- **P1-4 · 会话超时与清理**（对应 Roadmap P1-4）：
+  - `config.py`：新增 `session_ttl_seconds`（默认 7200 = 2h）和 `session_cleanup_interval_seconds`（默认 300 = 5min）配置，均可通过环境变量覆盖。
+  - `db.py`：新增 `cleanup_expired_sessions(ttl_seconds)` 函数，删除 `sessions` 表中 `updated_at` 超过 TTL 的记录，并将对应的 `active` 会话标记为 `expired`。
+  - `app.py`：lifespan 中启动 `asyncio.create_task(_session_cleanup_loop())` 后台定时清理任务，每隔 `session_cleanup_interval_seconds` 执行一次清理，应用关闭时自动 cancel。
+- **P1-5 · LLM 调用增加重试**（对应 Roadmap P1-5）：
+  - 新增依赖 `tenacity`。
+  - `config.py`：新增 `llm_max_retries`（默认 3）、`llm_retry_min_wait`（默认 1s）、`llm_retry_max_wait`（默认 10s）配置。
+  - `llm_service.py`：新增 `_http_post()` 函数，使用 tenacity `retry` 装饰器实现指数退避重试（仅对 `httpx.HTTPStatusError`、`httpx.TransportError`、`TimeoutError` 重试），`_chat()` 内部调用 `_http_post()`。重试前通过 `before_sleep_log` 输出 WARNING 日志。
+- **P1-3 · Prompt 模板化**（对应 Roadmap P1-3）：
+  - 新增 `backend/prompts/` 包：`__init__.py` 提供 `load_prompt(name)` 函数，从同目录下 YAML 文件加载 prompt 模板并缓存（`lru_cache`）；模板支持 `{variable}` 占位符替换，`{{`/`}}` 自动转义。
+  - 新增 5 个 YAML 模板文件：
+    - `expand_kb_queries.yaml`（llm_expand_kb_queries）
+    - `kb_synthesize.yaml`（llm_kb_synthesize）
+    - `collect.yaml`（llm_collect）
+    - `build_draft.yaml`（llm_build_draft_sections）
+    - `confirmer_parse.yaml`（llm_confirmer_parse）
+  - `llm_service.py`：5 个 LLM 函数全部改为 `load_prompt("xxx")` 加载模板 + `tpl.system()`/`tpl.user()` 变量替换，**代码中不再硬编码任何 prompt 文案**。
+
+### 配置
+
+- `.env.example`：新增 `RS_AGENT_SESSION_TTL_SECONDS`、`RS_AGENT_SESSION_CLEANUP_INTERVAL`、`RS_AGENT_LLM_MAX_RETRIES`、`RS_AGENT_LLM_RETRY_MIN_WAIT`、`RS_AGENT_LLM_RETRY_MAX_WAIT` 示例。
+
+### 文档与规范
+
+- README：更新版本号至 0.4.0。
+- CHANGELOG：记录 P1-4（会话清理）、P1-5（LLM 重试）、P1-3（Prompt 模板化）改动。
+- roadmap.md：删除已完成的 P1-4、P1-5、P1-3 条目。
+
+---
+
 ## [0.3.0] - 2026-02-15
 
 ### 后端

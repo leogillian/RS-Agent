@@ -239,3 +239,44 @@ def delete_session(session_id: str) -> None:
     with get_conn() as conn:
         conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
 
+
+def cleanup_expired_sessions(ttl_seconds: int) -> int:
+    """Delete sessions whose updated_at is older than *ttl_seconds* ago.
+
+    Also cleans up corresponding conversations & messages whose status
+    is still 'active' (i.e. not finished).
+
+    Returns the number of sessions deleted.
+    """
+    if ttl_seconds <= 0:
+        return 0
+    with get_conn() as conn:
+        # Find expired sessions
+        cur = conn.execute(
+            """
+            SELECT id FROM sessions
+            WHERE updated_at < datetime('now', 'localtime', ? || ' seconds')
+            """,
+            (str(-ttl_seconds),),
+        )
+        expired_ids = [row["id"] for row in cur.fetchall()]
+        if not expired_ids:
+            return 0
+
+        # Delete expired sessions
+        conn.executemany(
+            "DELETE FROM sessions WHERE id = ?",
+            [(sid,) for sid in expired_ids],
+        )
+
+        # Archive related active conversations → mark as 'expired'
+        conn.executemany(
+            """
+            UPDATE conversations SET status = 'expired', updated_at = datetime('now', 'localtime')
+            WHERE id = ? AND status = 'active'
+            """,
+            [(sid,) for sid in expired_ids],
+        )
+
+    return len(expired_ids)
+
