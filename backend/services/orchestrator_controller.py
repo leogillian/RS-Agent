@@ -521,6 +521,51 @@ def confirm_draft(session_id: str, feedback: str) -> Tuple[OrchestratorSession, 
     return sess, status
 
 
+async def redo_full(session_id: str) -> OrchestratorSession:
+    """P1-6: 整体重做 — 回退到 COLLECT 状态，清空草稿与回答，重新走完整流程。"""
+    sess = get_session(session_id)
+    if not sess:
+        raise KeyError(f"session {session_id} not found")
+
+    # 保留 user_request 和 knowledge_markdown（避免重复 KB 检索），清空草稿与回答
+    sess.draft_struct = {}
+    sess.user_answers = []
+    sess.open_questions = []
+    sess.last_defend_questions = []
+    sess.state = "COLLECT"
+    # 清空 knowledge_markdown 以触发重新检索
+    sess.knowledge_markdown = ""
+    sess.kb_image_urls = []
+    sess.requirement_structured = {}
+    _persist(sess)
+    return sess
+
+
+async def redo_partial(session_id: str, scope: str) -> OrchestratorSession:
+    """P1-6: 部分重做 — 仅清空指定 section 并回退到 WAITING_ANSWERS 状态，
+    下一轮用户回答后重新生成该 section。
+
+    scope: "business_requirement" | "system_current" | "system_changes"
+    """
+    sess = get_session(session_id)
+    if not sess:
+        raise KeyError(f"session {session_id} not found")
+
+    valid_scopes = ("business_requirement", "system_current", "system_changes")
+    if scope not in valid_scopes:
+        scope = "system_changes"  # 默认重做改动点
+
+    # 清空该 section
+    if sess.draft_struct:
+        sess.draft_struct[scope] = {}
+
+    # 回退到 WAITING_ANSWERS，下一轮用户回答后重新 build_draft（保留其他 section）
+    sess.state = "WAITING_ANSWERS"
+    sess.last_defend_questions = []
+    _persist(sess)
+    return sess
+
+
 def apply_defend_answers(session_id: str, answer_text: str) -> OrchestratorSession:
     """在 DEFEND 阶段应用用户补充的说明，更新 business_changes，并追加 clarification_log。"""
     sess = get_session(session_id)

@@ -8,6 +8,46 @@
 
 ---
 
+## [0.5.0] - 2026-02-15
+
+### 后端
+
+- **P1-1 · 意图路由升级**（对应 Roadmap P1-1）：
+  - `intent_router.py`：从简单关键词匹配升级为**关键词规则 + LLM 意图分类混合路由**。
+  - 新增扩展关键词模式（正则）：弱 KB_QUERY 模式（疑问句 + 规则/流程相关词）、弱 ORCH_FLOW 模式（改动/新增/优化等动作词），提升规则层覆盖面。
+  - 强关键词命中（置信度 ≥0.9）直接返回，弱命中或模糊区域调用 LLM 分类兜底。
+  - 新增 `detect_intent_hybrid()` 异步函数（返回 `intent` + `method`），`agent_pipeline.py` 改用此函数，trace 中展示路由方法（rule / llm / llm_fallback）。
+  - 新增 `backend/prompts/intent_classify.yaml` LLM 意图分类 prompt 模板。
+  - `llm_service.py`：新增 `llm_classify_intent()` 函数，调用 LLM 返回 KB_QUERY / ORCH_FLOW。
+- **P1-6 · 实现 redo 能力**（对应 Roadmap P1-6）：
+  - `orchestrator_controller.py`：新增 `redo_full()` 和 `redo_partial(scope)` 异步函数。
+    - `redo_full`：回退到 COLLECT 状态，清空草稿、回答、知识库缓存，重新走完整 COLLECT → open_questions 流程。
+    - `redo_partial`：仅清空指定 section（business_requirement / system_current / system_changes），回退到 WAITING_ANSWERS，下一轮用户回答后重新生成该部分。
+  - `agent_pipeline.py`：`_handle_confirm()` 中 `request_redo_full` 和 `request_redo_partial` 不再仅提示，而是真实执行重做逻辑，并返回对应的 OPEN_QUESTIONS 或 INFO。
+
+### 前端
+
+- **P1-2 · 前端组件拆分**（对应 Roadmap P1-2）：
+  - `App.tsx` 从 725 行拆分为 197 行，仅保留全局状态管理与顶层布局。
+  - 新增 `frontend/src/components/` 目录，拆分出 8 个组件/模块：
+    - `types.ts`（18 行）：共享类型定义（Message 等）。
+    - `TracePanel.tsx`（37 行）：执行轨迹折叠面板。
+    - `MessageBubble.tsx`（67 行）：单条消息气泡（含 Trace / Markdown / 图片）。
+    - `HistoryDrawer.tsx`（65 行）：历史会话抽屉侧栏。
+    - `InputArea.tsx`（80 行）：底部输入区（文本框 + 上传 + 停止/发送）。
+    - `Lightbox.tsx`（70 行）：图片 / Mermaid 全尺寸预览灯箱。
+    - `ChatPanel.tsx`（133 行）：聊天区域（消息列表 + 滚动控制 + 输入栏）。
+    - `useMdComponents.ts`（83 行）：ReactMarkdown 的 components 配置 hook。
+  - 所有文件均控制在 200 行以内，组件使用 `React.memo` 优化渲染。
+
+### 文档与规范
+
+- README：更新版本号至 0.5.0。
+- CHANGELOG：记录 P1-1（意图路由升级）、P1-2（前端组件拆分）、P1-6（redo 能力）改动。
+- roadmap.md：删除已完成的 P1-1、P1-2、P1-6 条目。
+
+---
+
 ## [0.4.0] - 2026-02-15
 
 ### 后端

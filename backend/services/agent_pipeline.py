@@ -37,7 +37,7 @@ from backend.services.confirmer_service import get_display as confirmer_get_disp
 from backend.services.confirmer_service import parse_feedback as confirmer_parse_feedback
 from backend.services.defender_service import check_draft
 from backend.services.editor_service import render_final
-from backend.services.intent_router import Intent, detect_intent
+from backend.services.intent_router import Intent, detect_intent, detect_intent_hybrid
 from backend.services.kb_query_enhanced import enhanced_kb_query
 from backend.services import orchestrator_controller as orch
 from backend.services.trading_kb_service import KBQueryError
@@ -257,11 +257,11 @@ class AgentPipeline:
         image_paths: Optional[List[str]],
     ) -> AsyncGenerator[PipelineEvent, None]:
         t_intent = time.time()
-        intent = detect_intent(text)
+        intent, intent_method = await detect_intent_hybrid(text)
         yield self._emit(
             "INTENT",
-            "services.intent_router.detect_intent · 完成",
-            _kv_detail(intent=intent.value, duration_ms=int((time.time() - t_intent) * 1000)),
+            "services.intent_router.detect_intent_hybrid · 完成",
+            _kv_detail(intent=intent.value, method=intent_method, duration_ms=int((time.time() - t_intent) * 1000)),
         )
 
         if intent is Intent.KB_QUERY:
@@ -443,15 +443,52 @@ class AgentPipeline:
             }}
             return
 
-        if parse_result.status in ("request_redo_partial", "request_redo_full"):
+        if parse_result.status == "request_redo_full":
+            yield self._emit("REDO", "redo_full · 整体重做：回退到 COLLECT 并重新走流程")
+            sess = await orch.redo_full(sess.session_id)
+            # 重新走 COLLECT → open_questions
+            yield self._emit("COLLECT", "services.orchestrator_controller.get_open_questions · 重做开始")
+            t_redo = time.time()
+            questions = await orch.get_open_questions(sess)
+            yield self._emit(
+                "COLLECT",
+                "services.orchestrator_controller.get_open_questions · 重做完成",
+                _kv_detail(questions=len(questions), duration_ms=int((time.time() - t_redo) * 1000)),
+            )
             self._save_trace(sess.session_id)
-            msg = "已记录您的重做要求；当前版本将先进入完整性检查并生成文档。后续版本将支持按块/整体重做。若需继续，请回复「确认」。"
+            if questions:
+                joined = "\n".join(f"{i+1}. {q}" for i, q in enumerate(questions))
+                add_message(sess.session_id, role="assistant", payload_type="OPEN_QUESTIONS", content=joined)
+            yield {"type": "final", "data": {
+                "sessionId": sess.session_id,
+                "intent": Intent.ORCH_FLOW.value,
+                "payloadType": "OPEN_QUESTIONS",
+                "content": {"questions": questions},
+            }}
+            return
+
+        if parse_result.status == "request_redo_partial":
+            scope = parse_result.redo_scope or "system_changes"
+            scope_names = {
+                "business_requirement": "业务需求",
+                "system_current": "系统现状",
+                "system_changes": "系统改动点",
+            }
+            scope_label = scope_names.get(scope, scope)
+            yield self._emit(
+                "REDO",
+                f"redo_partial · 部分重做「{scope_label}」",
+                _kv_detail(scope=scope),
+            )
+            sess = await orch.redo_partial(sess.session_id, scope)
+            msg = f"已清空「{scope_label}」部分，请补充说明后重新生成该部分（回复您的补充信息）。"
+            self._save_trace(sess.session_id)
             add_message(sess.session_id, role="assistant", payload_type="INFO", content=msg)
             yield {"type": "final", "data": {
                 "sessionId": sess.session_id,
                 "intent": Intent.ORCH_FLOW.value,
                 "payloadType": "INFO",
-                "content": {"message": "已记录重做要求，请回复「确认」继续。"},
+                "content": {"message": msg},
             }}
             return
 

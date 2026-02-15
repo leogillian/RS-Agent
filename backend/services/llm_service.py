@@ -108,6 +108,35 @@ async def _chat(messages: List[Dict[str, Any]], temperature: float = 0.2, max_to
 # ---------------------------------------------------------------------------
 
 
+async def llm_classify_intent(user_text: str) -> Optional[str]:
+    """P1-1: LLM 意图分类 — 判断 KB_QUERY / ORCH_FLOW。
+
+    Returns:
+        "KB_QUERY" 或 "ORCH_FLOW"，若无法判断返回 None。
+    """
+    text = (user_text or "").strip()
+    if not text:
+        return None
+    tpl = load_prompt("intent_classify")
+    messages: List[Dict[str, Any]] = [
+        {"role": "system", "content": tpl.system()},
+        {"role": "user", "content": tpl.user(user_text=text)},
+    ]
+    raw = await _chat(messages, temperature=0.0, max_tokens=128)
+    try:
+        data = json.loads(raw)
+        intent = data.get("intent", "").strip().upper()
+        if intent in ("KB_QUERY", "ORCH_FLOW"):
+            return intent
+    except Exception:
+        # 尝试从纯文本中提取
+        if "KB_QUERY" in raw.upper():
+            return "KB_QUERY"
+        if "ORCH_FLOW" in raw.upper():
+            return "ORCH_FLOW"
+    return None
+
+
 async def llm_expand_kb_queries(user_query: str, max_queries: int = 4) -> List[str]:
     """KB_QUERY 方案 B：将用户问题扩展为多条检索 query（不输出答案）。"""
     uq = (user_query or "").strip()
